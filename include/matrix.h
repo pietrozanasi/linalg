@@ -9,6 +9,7 @@ void m_rand_lower_init(matrix* m, int n, double min, double max);
 void m_rand_upper_init(matrix* m, int n, double min, double max);
 void m_rand_diag_init(matrix* m, int n, double min, double max);
 void m_id_init(matrix* m, int n);
+void m_copy_init(matrix* in, matrix* out);
 
 double m_at(matrix* m, int i, int j);
 void m_set(matrix* m, int i, int j, double x);

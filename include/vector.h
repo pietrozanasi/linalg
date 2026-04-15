@@ -7,8 +7,9 @@ void v_print(vector* v);
 
 void v_zero_init(vector* v, int n);
 void v_rand_init(vector* v, int n, double min, double max);
+void v_copy_init(vector* in, vector* out);
 
-int v_at(vector* v, int i);
+double v_at(vector* v, int i);
 void v_set(vector* v, int i, double x);
 
 void v_scalar_mult(vector* v, double c);

@@ -12,7 +12,7 @@ void v_print(vector* v) {
     for(int i = 0; i < n; i++) {
         printf("%f  ", v->data[i]);
     }
-    printf("]\n");
+    printf("]\n\n");
 }
 
 void m_print(matrix* m) {
@@ -22,7 +22,7 @@ void m_print(matrix* m) {
         printf("%f  ", m_at(m, f/n, f%n));
         if(!((f+1)%n)) printf("\n");
     }
-    printf("END\n");
+    printf("END\n\n");
 }
 
 // initializers
@@ -37,6 +37,13 @@ void v_rand_init(vector* v, int n, double min, double max) {
     v->data = (double*)malloc(n * sizeof(double));
     for(int i = 0; i < n; i++)
         v->data[i] = min + (max - min) * rand() / (double)RAND_MAX;
+}
+
+void v_copy_init(vector* in, vector* out) {
+    int n = in->n;
+    v_zero_init(out, n);
+    for(int i = 0; i < n; i++)
+        out->data[i] = in->data[i];
 }
 
 void m_zero_init(matrix* m, int n) {
@@ -75,7 +82,7 @@ void m_rand_lower_init(matrix* m, int n, double min, double max) {
 void m_rand_upper_init(matrix* m, int n, double min, double max) {
     m->n = n;
     m->data = (double*)malloc(n * n * sizeof(double));
-    int num;
+    double num;
 
     for(int f = 0; f < n * n; f++) {
         if(f/n>f%n) num = 0.0;
@@ -98,9 +105,17 @@ void m_rand_diag_init(matrix* m, int n, double min, double max) {
     }
 }
 
+void m_copy_init(matrix* in, matrix* out) {
+    int n = in->n;
+    m_zero_init(out, n);
+
+    for(int i = 0; i < n * n; i++)
+        out->data[i] = in->data[i];
+}
+
 // getters and setters
 
-int v_at(vector* v, int i) {
+double v_at(vector* v, int i) {
     if(i>= v->n) {
         fprintf(stderr, "v_at::Index %d out of bound %d\n", i, v->n);
         exit(1);
@@ -204,8 +219,17 @@ void m_mult(matrix* m1, matrix* m2, matrix* out) {
         exit(1);
     }
 
+    if(out == m1 || out == m2) {
+        matrix temp;
+        m_mult(m1, m2, &temp);
+        m_copy_init(&temp, out);
+        free(temp.data);
+        return;
+    }
+
     int n = m1->n;
     double sum;
+
     m_zero_init(out, n);
 
     for(int i = 0; i < n; i++) {
@@ -223,6 +247,14 @@ void m_add(matrix* m1, matrix* m2, matrix* out) {
     if(m1->n != m2->n) {
         fprintf(stderr, "m_add::Different matrix dimensions: %d and %d\n", m1->n, m2->n);
         exit(1);
+    }
+
+    if(out == m1 || out == m2) {
+        matrix temp;
+        m_add(m1, m2, &temp);
+        m_copy_init(&temp, out);
+        free(temp.data);
+        return;
     }
 
     int n = m1->n;
@@ -244,6 +276,14 @@ void mv_mult(matrix* m, vector* v, vector* out) {
     double sum;
     v_zero_init(out, n);
 
+    if(out == v) {
+        vector temp;
+        mv_mult(m, v, &temp);
+        v_copy_init(&temp, out);
+        free(temp.data);
+        return;
+    }
+
     for(int i = 0; i < n; i++) {
         sum = 0.0;
         for(int j = 0; j < n; j++)
@@ -251,6 +291,17 @@ void mv_mult(matrix* m, vector* v, vector* out) {
 
         v_set(out, i, sum);
     }
+}
+
+void v_swap(vector* v, int i, int j) {
+    if(i >= v->n || j >= v->n) {
+        fprintf(stderr, "v_swap::Index %d or %d out of bounds %d\n", i, j, v->n);
+        exit(1);
+    }
+
+    double temp = v_at(v, i);
+    v_set(v, i, v_at(v, j));
+    v_set(v, j, temp);
 }
 
 // matrix manipulation
@@ -303,6 +354,17 @@ void m_remove_cross(matrix* m, int row, int col, matrix* out) {
     }
 }
 
+void m_swap(matrix* m, int i1, int j1, int i2, int j2) {
+    if(i1 >= m->n || j1 >= m->n || i2 >= m->n || j2 >= m->n) {
+        fprintf(stderr, "m_swap::Indices out of bounds. I1: %d, J1: %d, I2: %d, J2: %d, n=%d\n", i1, j1, i2, j2, m->n);
+        exit(1);
+    }
+
+    double temp = m_at(m, i1, j1);
+    m_set(m, i1, j1, m_at(m, i2, j2));
+    m_set(m, i2, j2, temp);
+}
+
 // determinants
 
 double m_naive_det(matrix* m) {
@@ -349,6 +411,60 @@ void solve_diag(matrix* A, vector* x, vector* b) {
     }
 }
 
+// LU decomposition with permutation matrix
+void lu_decomp(matrix* m, matrix* L, matrix* U, matrix *P) {
+    int n = m->n;
+    m_id_init(L, n);
+    m_copy_init(m, U);
+    m_id_init(P, n);
+    
+    int p; 
+    double Ujk, Upk, Lik, Ukk; // Upk è il valore sulla riga pivot
+    // Uij e Ukj vanno dichiarate qui o dentro il ciclo
+
+    for(int k = 0; k < n; k++) {
+        // 1. Ricerca del Pivot
+        p = k;
+        for(int j = k + 1; j < n; ++j) {
+            Ujk = m_at(U, j, k);
+            Upk = m_at(U, p, k); // Confrontiamo sempre gli elementi sulla stessa colonna k
+            if(fabs(Ujk) > fabs(Upk))
+                p = j;
+        }
+
+        // 2. Scambio righe se necessario
+        if(k != p) {
+            m_swap_rows(U, k, p);
+            m_swap_rows(P, k, p);
+            for(int j = 0; j < k; j++) {
+                // Assumendo che m_swap scambi elementi singoli (m, r1, c1, r2, c2)
+                m_swap(L, k, j, p, j); 
+            }
+        }
+
+        // 3. Eliminazione
+        Ukk = m_at(U, k, k);
+        if(fabs(Ukk) < 1e-15) { // Meglio un piccolo epsilon rispetto a 0.0 secco
+            fprintf(stderr, "lu_decomp::Zero pivot element at index %d. Matrix is singular.\n", k);
+            return;
+        }
+
+        for(int i = k + 1; i < n; ++i) {
+            Lik = m_at(U, i, k) / Ukk;
+            m_set(L, i, k, Lik);
+            m_set(U, i, k, 0.0);
+
+            for(int j = k + 1; j < n; ++j) {
+                // IMPORTANTE: Questi valori devono essere aggiornati DENTRO il ciclo j
+                double Ukj = m_at(U, k, j);
+                double Uij = m_at(U, i, j);
+                m_set(U, i, j, Uij - Lik * Ukj);
+            }
+        }
+    }
+}
+
+
 // solve Ax = b where A is orthogonal, that is: A^T A = I, which implies that A^T = A^-1
 // therefore, x = A^-1 b = A^T b
 void solve_orthogonal(matrix* A, vector* x, vector* b) {
@@ -367,9 +483,17 @@ void solve_orthogonal(matrix* A, vector* x, vector* b) {
 // solve Ax = b where A is lower triangular, using forward substitution. invariant:
 // x_i = (b_i - sum_{j=0}^{i-1} A_{ij} x_j) / A_{ii}
 void solve_lower_triangular(matrix* A, vector* x, vector* b) {
+    if(A->n != b->n) {
+        fprintf(stderr, "solve_lower_triangular::Incompatible dimensions. A:%d, b:%d\n", A->n, b->n);
+        return;
+    }
+
     int n = A->n;
+    double sum;
+    v_zero_init(x, n);
+
     for(int i = 0; i < n; i++) {
-        double sum = 0.0;
+        sum = 0.0;
         for(int j = 0; j < i; j++) {
             sum += m_at(A, i, j) * v_at(x, j);
         }
@@ -380,12 +504,44 @@ void solve_lower_triangular(matrix* A, vector* x, vector* b) {
 // solve Ax = b where A is upper triangular, using backward substitution. invariant:
 // x_i = (b_i - sum_{j=i+1}^{n-1} A_{ij} x_j) / A_{ii}
 void solve_upper_triangular(matrix* A, vector* x, vector* b) {
+        if(A->n != b->n) {
+        fprintf(stderr, "solve_upper_triangular::Incompatible dimensions. A:%d, b:%d\n", A->n, b->n);
+        return;
+    }
+
     int n = A->n;
+    double sum;
+    v_zero_init(x, n);
+
     for(int i = n-1; i >= 0; i--) {
-        double sum = 0.0;
+        sum = 0.0;
         for(int j = i+1; j < n; j++) {
             sum += m_at(A, i, j) * v_at(x, j);
         }
         v_set(x, i, (v_at(b, i) - sum) / m_at(A, i, i));
     }
+}
+
+void solve_lu(matrix* A, vector* x, vector* b) {
+    if(A->n != b->n) {
+        fprintf(stderr, "solve_lu::Incompatible dimensions. A:%d, b:%d\n", A->n, b->n);
+        return;
+    }
+
+    matrix L, U, P;
+    lu_decomp(A, &L, &U, &P);
+
+    int n = A->n;
+    vector y;
+    vector Pb;
+    mv_mult(&P, b, &Pb);
+
+    solve_lower_triangular(&L, &y, &Pb);
+    solve_upper_triangular(&U, x, &y);
+
+    free(P.data);
+    free(L.data);
+    free(U.data);
+    free(y.data);
+    free(Pb.data);
 }
